@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"traffic-monitor/stats"
+	"github.com/missuo/traffic-monitor/stats"
 )
 
 type Server struct {
@@ -26,12 +26,15 @@ type StatsResponse struct {
 }
 
 type ProxyStatsResponse struct {
-	Name       string      `json:"name"`
-	Protocol   string      `json:"protocol"`
-	ListenPort int         `json:"listen_port"`
-	TargetPort int         `json:"target_port"`
-	Total      TrafficData `json:"total"`
-	Monthly    MonthlyData `json:"monthly"`
+	Name          string      `json:"name"`
+	Protocol      string      `json:"protocol"`
+	ListenPort    int         `json:"listen_port"`
+	TargetPort    int         `json:"target_port"`
+	Total         TrafficData `json:"total"`
+	Monthly       MonthlyData `json:"monthly"`
+	Limit         int64       `json:"limit"`
+	LimitHuman    string      `json:"limit_human"`
+	LimitExceeded bool        `json:"limit_exceeded"`
 }
 
 type TrafficData struct {
@@ -157,6 +160,12 @@ func (s *Server) convertToResponse(stat *stats.ProxyStats) ProxyStatsResponse {
 	totalDownload := atomic.LoadInt64(&stat.TotalDownload)
 	monthlyUpload := atomic.LoadInt64(&stat.MonthlyUpload)
 	monthlyDownload := atomic.LoadInt64(&stat.MonthlyDownload)
+	limit := atomic.LoadInt64(&stat.Limit)
+
+	limitHuman := "unlimited"
+	if limit > 0 {
+		limitHuman = stats.FormatBytes(limit)
+	}
 
 	return ProxyStatsResponse{
 		Name:       stat.Name,
@@ -176,5 +185,8 @@ func (s *Server) convertToResponse(stat *stats.ProxyStats) ProxyStatsResponse {
 			UploadHuman:   stats.FormatBytes(monthlyUpload),
 			DownloadHuman: stats.FormatBytes(monthlyDownload),
 		},
+		Limit:         limit,
+		LimitHuman:    limitHuman,
+		LimitExceeded: stat.IsLimitExceeded(),
 	}
 }

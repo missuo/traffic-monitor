@@ -7,7 +7,7 @@ import (
 	"net"
 	"sync"
 
-	"traffic-monitor/stats"
+	"github.com/missuo/traffic-monitor/stats"
 )
 
 var bufferPool = sync.Pool{
@@ -86,6 +86,11 @@ func (p *TCPProxy) acceptLoop() {
 
 func (p *TCPProxy) handleConn(src net.Conn) {
 	defer src.Close()
+
+	if p.stats.IsLimitExceeded() {
+		log.Printf("[TCP] %s: connection rejected, traffic limit exceeded", p.name)
+		return
+	}
 
 	dst, err := net.Dial("tcp", p.targetAddr)
 	if err != nil {

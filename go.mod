@@ -1,4 +1,4 @@
-module traffic-monitor
+module github.com/missuo/traffic-monitor
 
 go 1.23.0
 

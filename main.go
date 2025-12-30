@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
-	"traffic-monitor/api"
-	"traffic-monitor/config"
-	"traffic-monitor/proxy"
-	"traffic-monitor/stats"
+	"github.com/missuo/traffic-monitor/api"
+	"github.com/missuo/traffic-monitor/config"
+	"github.com/missuo/traffic-monitor/proxy"
+	"github.com/missuo/traffic-monitor/stats"
 )
 
 type Proxy interface {
@@ -38,7 +38,16 @@ func main() {
 	var proxies []Proxy
 
 	for _, p := range cfg.Proxies {
-		proxyStats := statsManager.Register(p.Name, p.Protocol, p.ListenPort, p.TargetPort)
+		limit, err := stats.ParseBytes(p.Limit)
+		if err != nil {
+			log.Fatalf("Failed to parse limit for proxy %s: %v", p.Name, err)
+		}
+
+		proxyStats := statsManager.Register(p.Name, p.Protocol, p.ListenPort, p.TargetPort, limit)
+
+		if limit > 0 {
+			log.Printf("[%s] Traffic limit: %s", p.Name, stats.FormatBytes(limit))
+		}
 
 		switch p.Protocol {
 		case "tcp":

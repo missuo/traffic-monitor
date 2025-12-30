@@ -23,6 +23,7 @@ type ProxyConfig struct {
 	TargetHost string `yaml:"target_host"`
 	TargetPort int    `yaml:"target_port"`
 	Protocol   string `yaml:"protocol"` // tcp, udp, or both
+	Limit      string `yaml:"limit"`    // e.g., "100GB", "1TB", "500MB", 0 = unlimited
 }
 
 func Load(path string) (*Config, error) {

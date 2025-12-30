@@ -2,6 +2,9 @@ package stats
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,6 +20,7 @@ type ProxyStats struct {
 	MonthlyUpload   int64  `json:"monthly_upload"`
 	MonthlyDownload int64  `json:"monthly_download"`
 	CurrentMonth    string `json:"current_month"`
+	Limit           int64  `json:"limit"` // 0 = unlimited
 }
 
 type StatsManager struct {
@@ -30,11 +34,13 @@ func NewStatsManager() *StatsManager {
 	}
 }
 
-func (m *StatsManager) Register(name, protocol string, listenPort, targetPort int) *ProxyStats {
+func (m *StatsManager) Register(name, protocol string, listenPort, targetPort int, limit int64) *ProxyStats {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if s, exists := m.stats[name]; exists {
+		// Update limit if changed in config
+		s.Limit = limit
 		return s
 	}
 
@@ -44,6 +50,7 @@ func (m *StatsManager) Register(name, protocol string, listenPort, targetPort in
 		ListenPort:   listenPort,
 		TargetPort:   targetPort,
 		CurrentMonth: currentMonth(),
+		Limit:        limit,
 	}
 	m.stats[name] = s
 	return s
@@ -104,6 +111,18 @@ func (s *ProxyStats) checkMonthReset() {
 	}
 }
 
+func (s *ProxyStats) IsLimitExceeded() bool {
+	if s.Limit <= 0 {
+		return false
+	}
+	total := atomic.LoadInt64(&s.TotalUpload) + atomic.LoadInt64(&s.TotalDownload)
+	return total >= s.Limit
+}
+
+func (s *ProxyStats) GetTotal() int64 {
+	return atomic.LoadInt64(&s.TotalUpload) + atomic.LoadInt64(&s.TotalDownload)
+}
+
 func currentMonth() string {
 	return time.Now().Format("2006-01")
 }
@@ -128,4 +147,48 @@ func FormatBytes(bytes int64) string {
 	default:
 		return fmt.Sprintf("%d B", bytes)
 	}
+}
+
+func ParseBytes(s string) (int64, error) {
+	if s == "" || s == "0" {
+		return 0, nil
+	}
+
+	s = strings.TrimSpace(strings.ToUpper(s))
+
+	re := regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)?$`)
+	matches := re.FindStringSubmatch(s)
+	if matches == nil {
+		return 0, fmt.Errorf("invalid byte format: %s", s)
+	}
+
+	value, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil {
+		return 0, err
+	}
+
+	unit := matches[2]
+	if unit == "" {
+		unit = "B"
+	}
+
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+		TB = GB * 1024
+	)
+
+	switch unit {
+	case "TB":
+		value *= TB
+	case "GB":
+		value *= GB
+	case "MB":
+		value *= MB
+	case "KB":
+		value *= KB
+	}
+
+	return int64(value), nil
 }

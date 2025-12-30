@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"traffic-monitor/stats"
+	"github.com/missuo/traffic-monitor/stats"
 )
 
 const (
@@ -111,6 +111,10 @@ func (p *UDPProxy) readLoop() {
 			}
 		}
 
+		if p.stats.IsLimitExceeded() {
+			continue // Drop packet when limit exceeded
+		}
+
 		p.stats.AddUpload(int64(n))
 
 		client := p.getOrCreateClient(clientAddr)
@@ -194,6 +198,10 @@ func (p *UDPProxy) readFromTarget(client *udpClient, key string) {
 				p.removeClient(key)
 				return
 			}
+		}
+
+		if p.stats.IsLimitExceeded() {
+			continue // Drop packet when limit exceeded
 		}
 
 		p.stats.AddDownload(int64(n))
