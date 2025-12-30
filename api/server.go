@@ -35,6 +35,15 @@ type ProxyStatsResponse struct {
 	Limit         int64       `json:"limit"`
 	LimitHuman    string      `json:"limit_human"`
 	LimitExceeded bool        `json:"limit_exceeded"`
+	Usage         *UsageData  `json:"usage,omitempty"`
+}
+
+type UsageData struct {
+	Used        int64   `json:"used"`
+	UsedHuman   string  `json:"used_human"`
+	Remaining   int64   `json:"remaining"`
+	RemainingHuman string `json:"remaining_human"`
+	Percentage  float64 `json:"percentage"`
 }
 
 type TrafficData struct {
@@ -167,7 +176,7 @@ func (s *Server) convertToResponse(stat *stats.ProxyStats) ProxyStatsResponse {
 		limitHuman = stats.FormatBytes(limit)
 	}
 
-	return ProxyStatsResponse{
+	resp := ProxyStatsResponse{
 		Name:       stat.Name,
 		Protocol:   stat.Protocol,
 		ListenPort: stat.ListenPort,
@@ -189,4 +198,26 @@ func (s *Server) convertToResponse(stat *stats.ProxyStats) ProxyStatsResponse {
 		LimitHuman:    limitHuman,
 		LimitExceeded: stat.IsLimitExceeded(),
 	}
+
+	if limit > 0 {
+		used := totalUpload + totalDownload
+		remaining := limit - used
+		if remaining < 0 {
+			remaining = 0
+		}
+		percentage := float64(used) / float64(limit) * 100
+		if percentage > 100 {
+			percentage = 100
+		}
+
+		resp.Usage = &UsageData{
+			Used:           used,
+			UsedHuman:      stats.FormatBytes(used),
+			Remaining:      remaining,
+			RemainingHuman: stats.FormatBytes(remaining),
+			Percentage:     float64(int(percentage*100)) / 100, // Round to 2 decimal places
+		}
+	}
+
+	return resp
 }
