@@ -18,12 +18,13 @@ type APIConfig struct {
 }
 
 type ProxyConfig struct {
-	Name       string `yaml:"name"`
-	ListenPort int    `yaml:"listen_port"`
-	TargetHost string `yaml:"target_host"`
-	TargetPort int    `yaml:"target_port"`
-	Protocol   string `yaml:"protocol"` // tcp, udp, or both
-	Limit      string `yaml:"limit"`    // e.g., "100GB", "1TB", "500MB", 0 = unlimited
+	Name         string `yaml:"name"`
+	ListenPort   int    `yaml:"listen_port"`
+	TargetHost   string `yaml:"target_host"`
+	TargetPort   int    `yaml:"target_port"`
+	Protocol     string `yaml:"protocol"`      // tcp, udp, or both
+	Limit        string `yaml:"limit"`         // total limit, e.g., "100GB", "1TB", 0 = unlimited
+	LimitMonthly string `yaml:"limit_monthly"` // monthly limit, e.g., "100GB", "1TB", 0 = unlimited
 }
 
 func Load(path string) (*Config, error) {

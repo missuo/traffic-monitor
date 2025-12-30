@@ -42,11 +42,18 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to parse limit for proxy %s: %v", p.Name, err)
 		}
+		limitMonthly, err := stats.ParseBytes(p.LimitMonthly)
+		if err != nil {
+			log.Fatalf("Failed to parse limit_monthly for proxy %s: %v", p.Name, err)
+		}
 
-		proxyStats := statsManager.Register(p.Name, p.Protocol, p.ListenPort, p.TargetPort, limit)
+		proxyStats := statsManager.Register(p.Name, p.Protocol, p.ListenPort, p.TargetPort, limit, limitMonthly)
 
 		if limit > 0 {
-			log.Printf("[%s] Traffic limit: %s", p.Name, stats.FormatBytes(limit))
+			log.Printf("[%s] Total limit: %s", p.Name, stats.FormatBytes(limit))
+		}
+		if limitMonthly > 0 {
+			log.Printf("[%s] Monthly limit: %s", p.Name, stats.FormatBytes(limitMonthly))
 		}
 
 		switch p.Protocol {

@@ -20,7 +20,8 @@ type ProxyStats struct {
 	MonthlyUpload   int64  `json:"monthly_upload"`
 	MonthlyDownload int64  `json:"monthly_download"`
 	CurrentMonth    string `json:"current_month"`
-	Limit           int64  `json:"limit"` // 0 = unlimited
+	Limit           int64  `json:"limit"`         // 0 = unlimited
+	LimitMonthly    int64  `json:"limit_monthly"` // 0 = unlimited
 }
 
 type StatsManager struct {
@@ -34,13 +35,14 @@ func NewStatsManager() *StatsManager {
 	}
 }
 
-func (m *StatsManager) Register(name, protocol string, listenPort, targetPort int, limit int64) *ProxyStats {
+func (m *StatsManager) Register(name, protocol string, listenPort, targetPort int, limit, limitMonthly int64) *ProxyStats {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if s, exists := m.stats[name]; exists {
-		// Update limit if changed in config
+		// Update limits if changed in config
 		s.Limit = limit
+		s.LimitMonthly = limitMonthly
 		return s
 	}
 
@@ -51,6 +53,7 @@ func (m *StatsManager) Register(name, protocol string, listenPort, targetPort in
 		TargetPort:   targetPort,
 		CurrentMonth: currentMonth(),
 		Limit:        limit,
+		LimitMonthly: limitMonthly,
 	}
 	m.stats[name] = s
 	return s
@@ -112,6 +115,25 @@ func (s *ProxyStats) checkMonthReset() {
 }
 
 func (s *ProxyStats) IsLimitExceeded() bool {
+	// Check total limit
+	if s.Limit > 0 {
+		total := atomic.LoadInt64(&s.TotalUpload) + atomic.LoadInt64(&s.TotalDownload)
+		if total >= s.Limit {
+			return true
+		}
+	}
+	// Check monthly limit
+	if s.LimitMonthly > 0 {
+		s.checkMonthReset()
+		monthly := atomic.LoadInt64(&s.MonthlyUpload) + atomic.LoadInt64(&s.MonthlyDownload)
+		if monthly >= s.LimitMonthly {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *ProxyStats) IsTotalLimitExceeded() bool {
 	if s.Limit <= 0 {
 		return false
 	}
@@ -119,8 +141,21 @@ func (s *ProxyStats) IsLimitExceeded() bool {
 	return total >= s.Limit
 }
 
+func (s *ProxyStats) IsMonthlyLimitExceeded() bool {
+	if s.LimitMonthly <= 0 {
+		return false
+	}
+	s.checkMonthReset()
+	monthly := atomic.LoadInt64(&s.MonthlyUpload) + atomic.LoadInt64(&s.MonthlyDownload)
+	return monthly >= s.LimitMonthly
+}
+
 func (s *ProxyStats) GetTotal() int64 {
 	return atomic.LoadInt64(&s.TotalUpload) + atomic.LoadInt64(&s.TotalDownload)
+}
+
+func (s *ProxyStats) GetMonthlyTotal() int64 {
+	return atomic.LoadInt64(&s.MonthlyUpload) + atomic.LoadInt64(&s.MonthlyDownload)
 }
 
 func currentMonth() string {

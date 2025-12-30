@@ -6,7 +6,7 @@ A high-performance TCP/UDP traffic forwarding proxy with traffic statistics, wri
 
 - **TCP/UDP Forwarding**: Forward traffic between ports with minimal overhead
 - **Traffic Statistics**: Track upload/download bytes (total and monthly)
-- **Traffic Limits**: Set bandwidth limits per proxy, connections rejected when exceeded
+- **Traffic Limits**: Set total and monthly bandwidth limits, connections rejected when exceeded
 - **Persistence**: Statistics survive restarts via JSON file storage
 - **Multi-proxy Support**: Configure multiple forwarding rules
 - **HTTP API**: Query traffic stats with Bearer token authentication
@@ -65,21 +65,22 @@ proxies:
     target_host: "127.0.0.1"
     target_port: 10000
     protocol: "tcp"
-    limit: "100GB"
+    limit: "1TB"
+    limit_monthly: "100GB"
 
   - name: "dns-proxy"
     listen_port: 5353
     target_host: "8.8.8.8"
     target_port: 53
     protocol: "udp"
-    limit: "10GB"
+    limit_monthly: "50GB"  # monthly only
 
   - name: "game-server"
     listen_port: 27015
     target_host: "192.168.1.100"
     target_port: 27015
     protocol: "both"
-    limit: ""  # unlimited
+    # no limits
 ```
 
 ### Configuration Options
@@ -94,7 +95,8 @@ proxies:
 | `proxies[].target_host` | Target host to forward to | `127.0.0.1` |
 | `proxies[].target_port` | Target port to forward to | required |
 | `proxies[].protocol` | Protocol: `tcp`, `udp`, or `both` | `tcp` |
-| `proxies[].limit` | Traffic limit (e.g., `100GB`, `1TB`) | `""` (unlimited) |
+| `proxies[].limit` | Total traffic limit (e.g., `1TB`) | `""` (unlimited) |
+| `proxies[].limit_monthly` | Monthly traffic limit, resets each month | `""` (unlimited) |
 
 ### Traffic Limit Format
 
@@ -106,9 +108,10 @@ Examples:
 - `"500MB"` - 500 megabytes
 - `""` or `"0"` - unlimited
 
-When the limit is exceeded:
+When either limit is exceeded:
 - **TCP**: New connections are rejected
 - **UDP**: Packets are dropped
+- Monthly limits reset automatically on the 1st of each month
 
 ## Usage
 
@@ -161,15 +164,25 @@ Response:
         "upload_human": "512.00 MB",
         "download_human": "1.00 GB"
       },
-      "limit": 107374182400,
-      "limit_human": "100.00 GB",
+      "limit": 1099511627776,
+      "limit_human": "1.00 TB",
       "limit_exceeded": false,
       "usage": {
         "used": 3221225472,
         "used_human": "3.00 GB",
-        "remaining": 104152956928,
-        "remaining_human": "97.00 GB",
-        "percentage": 3.0
+        "remaining": 1096290402304,
+        "remaining_human": "1021.00 GB",
+        "percentage": 0.29
+      },
+      "limit_monthly": 107374182400,
+      "limit_monthly_human": "100.00 GB",
+      "limit_monthly_exceeded": false,
+      "usage_monthly": {
+        "used": 1610612736,
+        "used_human": "1.50 GB",
+        "remaining": 105763569664,
+        "remaining_human": "98.50 GB",
+        "percentage": 1.5
       }
     }
   ]

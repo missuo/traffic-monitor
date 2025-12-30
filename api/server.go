@@ -26,24 +26,28 @@ type StatsResponse struct {
 }
 
 type ProxyStatsResponse struct {
-	Name          string      `json:"name"`
-	Protocol      string      `json:"protocol"`
-	ListenPort    int         `json:"listen_port"`
-	TargetPort    int         `json:"target_port"`
-	Total         TrafficData `json:"total"`
-	Monthly       MonthlyData `json:"monthly"`
-	Limit         int64       `json:"limit"`
-	LimitHuman    string      `json:"limit_human"`
-	LimitExceeded bool        `json:"limit_exceeded"`
-	Usage         *UsageData  `json:"usage,omitempty"`
+	Name                 string      `json:"name"`
+	Protocol             string      `json:"protocol"`
+	ListenPort           int         `json:"listen_port"`
+	TargetPort           int         `json:"target_port"`
+	Total                TrafficData `json:"total"`
+	Monthly              MonthlyData `json:"monthly"`
+	Limit                int64       `json:"limit"`
+	LimitHuman           string      `json:"limit_human"`
+	LimitExceeded        bool        `json:"limit_exceeded"`
+	Usage                *UsageData  `json:"usage,omitempty"`
+	LimitMonthly         int64       `json:"limit_monthly"`
+	LimitMonthlyHuman    string      `json:"limit_monthly_human"`
+	LimitMonthlyExceeded bool        `json:"limit_monthly_exceeded"`
+	UsageMonthly         *UsageData  `json:"usage_monthly,omitempty"`
 }
 
 type UsageData struct {
-	Used        int64   `json:"used"`
-	UsedHuman   string  `json:"used_human"`
-	Remaining   int64   `json:"remaining"`
-	RemainingHuman string `json:"remaining_human"`
-	Percentage  float64 `json:"percentage"`
+	Used           int64   `json:"used"`
+	UsedHuman      string  `json:"used_human"`
+	Remaining      int64   `json:"remaining"`
+	RemainingHuman string  `json:"remaining_human"`
+	Percentage     float64 `json:"percentage"`
 }
 
 type TrafficData struct {
@@ -170,10 +174,16 @@ func (s *Server) convertToResponse(stat *stats.ProxyStats) ProxyStatsResponse {
 	monthlyUpload := atomic.LoadInt64(&stat.MonthlyUpload)
 	monthlyDownload := atomic.LoadInt64(&stat.MonthlyDownload)
 	limit := atomic.LoadInt64(&stat.Limit)
+	limitMonthly := atomic.LoadInt64(&stat.LimitMonthly)
 
 	limitHuman := "unlimited"
 	if limit > 0 {
 		limitHuman = stats.FormatBytes(limit)
+	}
+
+	limitMonthlyHuman := "unlimited"
+	if limitMonthly > 0 {
+		limitMonthlyHuman = stats.FormatBytes(limitMonthly)
 	}
 
 	resp := ProxyStatsResponse{
@@ -194,11 +204,15 @@ func (s *Server) convertToResponse(stat *stats.ProxyStats) ProxyStatsResponse {
 			UploadHuman:   stats.FormatBytes(monthlyUpload),
 			DownloadHuman: stats.FormatBytes(monthlyDownload),
 		},
-		Limit:         limit,
-		LimitHuman:    limitHuman,
-		LimitExceeded: stat.IsLimitExceeded(),
+		Limit:                limit,
+		LimitHuman:           limitHuman,
+		LimitExceeded:        stat.IsTotalLimitExceeded(),
+		LimitMonthly:         limitMonthly,
+		LimitMonthlyHuman:    limitMonthlyHuman,
+		LimitMonthlyExceeded: stat.IsMonthlyLimitExceeded(),
 	}
 
+	// Total usage
 	if limit > 0 {
 		used := totalUpload + totalDownload
 		remaining := limit - used
@@ -215,7 +229,28 @@ func (s *Server) convertToResponse(stat *stats.ProxyStats) ProxyStatsResponse {
 			UsedHuman:      stats.FormatBytes(used),
 			Remaining:      remaining,
 			RemainingHuman: stats.FormatBytes(remaining),
-			Percentage:     float64(int(percentage*100)) / 100, // Round to 2 decimal places
+			Percentage:     float64(int(percentage*100)) / 100,
+		}
+	}
+
+	// Monthly usage
+	if limitMonthly > 0 {
+		used := monthlyUpload + monthlyDownload
+		remaining := limitMonthly - used
+		if remaining < 0 {
+			remaining = 0
+		}
+		percentage := float64(used) / float64(limitMonthly) * 100
+		if percentage > 100 {
+			percentage = 100
+		}
+
+		resp.UsageMonthly = &UsageData{
+			Used:           used,
+			UsedHuman:      stats.FormatBytes(used),
+			Remaining:      remaining,
+			RemainingHuman: stats.FormatBytes(remaining),
+			Percentage:     float64(int(percentage*100)) / 100,
 		}
 	}
 
