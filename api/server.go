@@ -1,12 +1,15 @@
 package api
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
 	"sync/atomic"
+	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"traffic-monitor/stats"
 )
@@ -23,12 +26,12 @@ type StatsResponse struct {
 }
 
 type ProxyStatsResponse struct {
-	Name       string        `json:"name"`
-	Protocol   string        `json:"protocol"`
-	ListenPort int           `json:"listen_port"`
-	TargetPort int           `json:"target_port"`
-	Total      TrafficData   `json:"total"`
-	Monthly    MonthlyData   `json:"monthly"`
+	Name       string      `json:"name"`
+	Protocol   string      `json:"protocol"`
+	ListenPort int         `json:"listen_port"`
+	TargetPort int         `json:"target_port"`
+	Total      TrafficData `json:"total"`
+	Monthly    MonthlyData `json:"monthly"`
 }
 
 type TrafficData struct {
@@ -55,14 +58,25 @@ func NewServer(port int, token string, manager *stats.StatsManager) *Server {
 }
 
 func (s *Server) Start() error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/stats", s.authMiddleware(s.handleStats))
-	mux.HandleFunc("/api/stats/", s.authMiddleware(s.handleStatsByName))
-	mux.HandleFunc("/health", s.handleHealth)
+	gin.SetMode(gin.ReleaseMode)
+
+	r := gin.New()
+	r.Use(gin.Recovery())
+
+	r.GET("/health", s.handleHealth)
+
+	api := r.Group("/api")
+	if s.token != "" {
+		api.Use(s.authMiddleware())
+	}
+	{
+		api.GET("/stats", s.handleStats)
+		api.GET("/stats/:name", s.handleStatsByName)
+	}
 
 	s.server = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.port),
-		Handler: mux,
+		Handler: r,
 	}
 
 	log.Printf("[API] Server listening on :%d", s.port)
@@ -78,41 +92,38 @@ func (s *Server) Start() error {
 
 func (s *Server) Stop() error {
 	if s.server != nil {
-		return s.server.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return s.server.Shutdown(ctx)
 	}
 	return nil
 }
 
-func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if s.token != "" {
-			auth := r.Header.Get("Authorization")
-			if auth == "" {
-				http.Error(w, `{"error": "missing authorization header"}`, http.StatusUnauthorized)
-				return
-			}
-
-			parts := strings.SplitN(auth, " ", 2)
-			if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" || parts[1] != s.token {
-				http.Error(w, `{"error": "invalid token"}`, http.StatusUnauthorized)
-				return
-			}
+func (s *Server) authMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		auth := c.GetHeader("Authorization")
+		if auth == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
+			c.Abort()
+			return
 		}
-		next(w, r)
+
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" || parts[1] != s.token {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
 	}
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status": "ok"}`))
+func (s *Server) handleHealth(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-
+func (s *Server) handleStats(c *gin.Context) {
 	allStats := s.manager.GetAll()
 	response := StatsResponse{
 		Proxies: make([]ProxyStatsResponse, 0, len(allStats)),
@@ -122,28 +133,23 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		response.Proxies = append(response.Proxies, s.convertToResponse(stat))
 	}
 
-	s.writeJSON(w, response)
+	c.JSON(http.StatusOK, response)
 }
 
-func (s *Server) handleStatsByName(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-
-	name := strings.TrimPrefix(r.URL.Path, "/api/stats/")
+func (s *Server) handleStatsByName(c *gin.Context) {
+	name := c.Param("name")
 	if name == "" {
-		http.Error(w, `{"error": "proxy name required"}`, http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "proxy name required"})
 		return
 	}
 
 	stat := s.manager.Get(name)
 	if stat == nil {
-		http.Error(w, `{"error": "proxy not found"}`, http.StatusNotFound)
+		c.JSON(http.StatusNotFound, gin.H{"error": "proxy not found"})
 		return
 	}
 
-	s.writeJSON(w, s.convertToResponse(stat))
+	c.JSON(http.StatusOK, s.convertToResponse(stat))
 }
 
 func (s *Server) convertToResponse(stat *stats.ProxyStats) ProxyStatsResponse {
@@ -171,9 +177,4 @@ func (s *Server) convertToResponse(stat *stats.ProxyStats) ProxyStatsResponse {
 			DownloadHuman: stats.FormatBytes(monthlyDownload),
 		},
 	}
-}
-
-func (s *Server) writeJSON(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
 }
