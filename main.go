@@ -59,15 +59,14 @@ func main() {
 			proxies = append(proxies, udpProxy)
 
 		case "both":
-			tcpStats := statsManager.Register(p.Name+"-tcp", "tcp", p.ListenPort, p.TargetPort)
-			tcpProxy := proxy.NewTCPProxy(p.Name+"-tcp", p.ListenPort, p.TargetHost, p.TargetPort, tcpStats)
+			// TCP and UDP share the same stats
+			tcpProxy := proxy.NewTCPProxy(p.Name, p.ListenPort, p.TargetHost, p.TargetPort, proxyStats)
 			if err := tcpProxy.Start(); err != nil {
 				log.Fatalf("Failed to start TCP proxy %s: %v", p.Name, err)
 			}
 			proxies = append(proxies, tcpProxy)
 
-			udpStats := statsManager.Register(p.Name+"-udp", "udp", p.ListenPort, p.TargetPort)
-			udpProxy, err := proxy.NewUDPProxy(p.Name+"-udp", p.ListenPort, p.TargetHost, p.TargetPort, udpStats)
+			udpProxy, err := proxy.NewUDPProxy(p.Name, p.ListenPort, p.TargetHost, p.TargetPort, proxyStats)
 			if err != nil {
 				log.Fatalf("Failed to create UDP proxy %s: %v", p.Name, err)
 			}
